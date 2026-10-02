@@ -1,0 +1,114 @@
+---
+- name: Create the app folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/app"
+    - "{{ app_dir }}/nginx"
+
+- name: Copy the API image sources
+  ansible.builtin.copy:
+    src: "{{ item.name }}"
+    dest: "{{ app_dir }}/app/{{ item.name }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: Dockerfile, mode: "0644" }
+    - { name: app.py, mode: "0644" }
+    - { name: entrypoint.sh, mode: "0755" }
+  loop_control:
+    label: "{{ item.name }}"
+  register: app_sources
+  notify: Restart dataproc
+
+# If a bind-mounted file is missing, Docker creates a DIRECTORY with that name.
+# So the log file must exist before the containers ever start.
+- name: Create the nginx log folder on the host
+  ansible.builtin.file:
+    path: "{{ nginx_log_file | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Create the nginx access log file on the host
+  ansible.builtin.file:
+    path: "{{ nginx_log_file }}"
+    state: touch
+    owner: root
+    group: adm
+    mode: "0640"
+    access_time: preserve
+    modification_time: preserve
+
+- name: Template nginx.conf
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ app_dir }}/nginx/nginx.conf"
+    mode: "0644"
+  notify: Restart dataproc
+
+- name: Template docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_dir }}/docker-compose.yml"
+    mode: "0644"
+  notify: Restart dataproc
+
+- name: Template the systemd unit
+  ansible.builtin.template:
+    src: dataproc.service.j2
+    dest: /etc/systemd/system/dataproc.service
+    mode: "0644"
+  notify: Restart dataproc
+
+- name: Check whether the API image exists
+  ansible.builtin.command: docker image inspect dataproc-api:latest
+  register: api_image
+  changed_when: false
+  failed_when: false
+
+- name: Build the API image (only when sources changed or it is missing)
+  ansible.builtin.command:
+    cmd: docker compose build api
+    chdir: "{{ app_dir }}"
+  when: app_sources.changed or api_image.rc != 0
+  notify: Restart dataproc
+
+# Restart now (not at the end) so the checks below test the new config.
+- name: Apply pending restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable dataproc.service at boot and make sure it is running
+  ansible.builtin.systemd:
+    name: dataproc.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ---- Checks ---------------------------------------------------------------
+
+- name: Check that the app answers through nginx
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_port }}/"
+    status_code: 200
+  register: smoke_test
+  until: smoke_test.status == 200
+  retries: 15
+  delay: 4
+
+- name: Check that the API container is not running as root
+  ansible.builtin.command:
+    cmd: docker compose exec -T api id -u
+    chdir: "{{ app_dir }}"
+  register: api_uid
+  changed_when: false
+  failed_when: api_uid.stdout | trim != dataproc_uid | string
+
+- name: Check that nginx wrote to the host log file
+  ansible.builtin.stat:
+    path: "{{ nginx_log_file }}"
+  register: log_file
+  failed_when: not log_file.stat.isreg or log_file.stat.size == 0

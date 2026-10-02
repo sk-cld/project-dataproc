@@ -1,0 +1,33 @@
+---
+# Configures the server created by terraform/ and deploys the Data Processor stack.
+- name: Configure the server and deploy Data Processor
+  hosts: dataproc
+  become: true
+  gather_facts: false   # the server may still be booting; facts are collected below
+
+  vars:
+    dataproc_user: dataproc
+    dataproc_uid: 2048
+    app_port: 8080                      # nginx, the only application port
+    api_port: 5000                      # python app, only reachable inside Docker
+    app_dir: /opt/dataproc
+    nginx_log_file: /var/log/nginx/custom-access.log
+
+  pre_tasks:
+    - name: Wait for the server to accept SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Wait for first-boot setup to finish (so apt is not locked)
+      ansible.builtin.command: cloud-init status --wait
+      register: cloud_init
+      changed_when: false
+      failed_when: cloud_init.rc not in [0, 2]   # 2 = finished with warnings
+
+    - name: Collect facts about the server
+      ansible.builtin.setup:
+
+  roles:
+    - base
+    - docker
+    - dataproc

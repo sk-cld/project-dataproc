@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+user nginx;
+worker_processes auto;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    access_log {{ nginx_log_file }} combined;
+    server_tokens off;
+
+    server {
+        listen {{ app_port }};
+
+        location / {
+            proxy_pass http://api:{{ api_port }};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+}

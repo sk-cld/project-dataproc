@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+name: dataproc
+
+services:
+  api:
+    build: {{ app_dir }}/app
+    image: dataproc-api:latest
+    container_name: dataproc-api
+    user: "{{ dataproc_uid }}:{{ dataproc_uid }}"   # the host's dataproc user, not root
+    restart: unless-stopped
+    expose:
+      - "{{ api_port }}"                            # only reachable by nginx, not published
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: dataproc-nginx
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "{{ app_port }}:{{ app_port }}"
+    volumes:
+      - {{ app_dir }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - {{ nginx_log_file }}:{{ nginx_log_file }}

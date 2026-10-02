@@ -1,0 +1,6 @@
+---
+- name: Restart dataproc
+  ansible.builtin.systemd:
+    name: dataproc.service
+    state: restarted
+    daemon_reload: true
