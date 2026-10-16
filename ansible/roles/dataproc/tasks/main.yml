@@ -37,7 +37,7 @@
   ansible.builtin.file:
     path: "{{ nginx_log_file }}"
     state: touch
-    owner: root
+    owner: "{{ dataproc_user }}"  #runs as dataproc
     group: adm
     mode: "0640"
     access_time: preserve

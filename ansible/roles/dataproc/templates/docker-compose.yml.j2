@@ -14,6 +14,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: dataproc-nginx
+    user: "{{ dataproc_uid }}:{{ dataproc_uid }}"  # Updated to the dataproc user
     restart: unless-stopped
     depends_on:
       - api

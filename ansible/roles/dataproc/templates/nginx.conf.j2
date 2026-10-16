@@ -1,7 +1,8 @@
 # {{ ansible_managed }}
-user nginx;
+# Now runs as dataproc user, files updated to /tmp so nginx works
 worker_processes auto;
 error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
 
 events {
     worker_connections 1024;
@@ -10,6 +11,12 @@ events {
 http {
     access_log {{ nginx_log_file }} combined;
     server_tokens off;
+
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path       /tmp/proxy_temp;
+    fastcgi_temp_path     /tmp/fastcgi_temp;
+    uwsgi_temp_path       /tmp/uwsgi_temp;
+    scgi_temp_path        /tmp/scgi_temp;
 
     server {
         listen {{ app_port }};
